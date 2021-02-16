@@ -1,0 +1,12 @@
+version: "3"
+
+services:
+  victim:
+          #   image: ubuntu
+    build: .
+    volumes:
+      - ../build:/build
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    entrypoint: bash
+    working_dir: /build

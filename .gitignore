@@ -1,0 +1,4 @@
+build/
+.gdb_history
+core
+peda-session-lifeline.txt
