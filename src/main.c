@@ -53,6 +53,11 @@ int main(int argc, char *argv[]) {
         sscanf(argv[1], "%d", &number_of_listeners);
     }
     printf("Starting %d lifelines\n", number_of_listeners);
+
+    // Close stdout and stderr, so our callee receives an EOF.
+    // Especially useful when starting additional lifeline from a lifeline
+    fclose(stdout);
+    fclose(stderr);
     for (int i = 0; i < number_of_listeners; i++) {
         dispatch(argc, argv);
         usleep(10000); // short sleep to mitigate race conditions when checking /proc/net/tcp

