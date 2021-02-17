@@ -23,12 +23,15 @@ void dispatch(int argc, char *argv[]) {
     prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0);
 
     // Change the Commandline seen in ps
-    unsigned long length = MAX(strlen(argv[0]), strlen(name));
-    for (unsigned int i = 0; i < length; i++) {
-        if (i < strlen(name)) {
-            argv[0][i] = name[i];
-        } else {
-            argv[0][i] = 0x00;
+    // --> [Process Name, NULL, NULL, ...]
+    for (unsigned int i = 0; i < argc; i++) {
+        unsigned long length = MAX(strlen(argv[i]), strlen(name));
+        for (unsigned int j = 0; j < length; j++) {
+            if (i == 0 && j < strlen(name)) {
+                argv[i][j] = name[j];
+            } else {
+                argv[i][j] = 0x00;
+            }
         }
     }
 

