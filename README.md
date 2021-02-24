@@ -12,9 +12,10 @@ It is like the cockroach of reverse shells; Not particularly nice to look at, bu
 ### Pros
  * Easily spawn many reverse shells as background processes
  * Only one process will connect back to your listener, leaving all other processes undetected by `netstat`
- * The default reverse shell does not use a `pts`, making it harder to detect.
+ * Random process names
+ * Does not use a `pts`
  * Compatible with [pwncat](https://github.com/calebstewart/pwncat)
- * Included `perl` dropper will run lifeline entirely [from RAM, without saving it to disk](https://magisterquis.github.io/2018/03/31/in-memory-only-elf-execution.html).
+ * Included `perl` dropper runs [directly from RAM](https://magisterquis.github.io/2018/03/31/in-memory-only-elf-execution.html).
 ### Cons
  * The reverse shell is compiled, making it harder to deploy if your target has a different architecture.
 
@@ -85,6 +86,6 @@ This will place a compiled reverse shell in the `build` directory. You can start
 ### Q; Does this provide an persistence against reboots?
 No, I created this program mostly for "KOTH"-like hacking games, where reboots aren't really an issue.  
 ### Q; Why is the shell so bad?
-The default "shell" is actually just a bunch of `popen` calls. You can used "!shell" to drop into a normal reverse shell which you can stabilize with Python. You can also use [pwncat](https://github.com/calebstewart/pwncat)'s listener directly if you want a fancy shell.
-
-The rationale behind this is that I want to keep control over the process to facilitate reconnecting, which is not possible once you set up a normal reverse shell with `execv`.
+The default "shell" is actually just a bunch of `popen` calls. You should can either:
+1. Type "!shell" to drop into a shell.
+1. Use [pwncat](https://github.com/calebstewart/pwncat) as a listener.
