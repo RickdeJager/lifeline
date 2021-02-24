@@ -168,5 +168,5 @@ void sigterm_handler(int signal) {
         return;
     }
     // Let PID that receive the sigterm exit
-    exit(0);
+    pthread_exit(0);
 }
