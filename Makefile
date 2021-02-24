@@ -10,12 +10,12 @@ PY_PORT ?= 8000
 # Dirty hack to force a fresh make every time. (needed when flags are updated)
 hack := $(shell touch src/main.c)
 
-build/lifeline:	src/main.c src/reverse.c Makefile
+build/lifeline:	src/main.c src/reverse.c src/util.c Makefile
 ifndef HOST
 	$(error HOST is not set, use "make HOST=x.x.x.x")
 endif
 	mkdir -p build
-	$(CC) src/main.c src/reverse.c -lpthread -o build/lifeline -I .	\
+	$(CC) src/main.c src/reverse.c src/util.c -lpthread -o build/lifeline -I .	\
 		-DHOST=\"$(HOST)\"					\
 		-DPORT=$(PORT)
 

