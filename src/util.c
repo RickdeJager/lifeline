@@ -7,6 +7,19 @@
 
 #include "constants.h"
 
+void padded_strcpy(char *dst, char *src) {
+    unsigned long src_len = strlen(src);
+    unsigned long dst_len = strlen(dst);
+    unsigned long length = MAX(src_len, dst_len) + 1;
+    for (unsigned int i = 0; i < length; i++) {
+        if (i < src_len) {
+            dst[i] = src[i];
+        } else {
+            dst[i] = 0x00;
+        }
+    }
+}
+
 void scramble_process_name(int argc, char *argv[]) {
     // Pick a random process name
     unsigned int upper = sizeof(process_names) / sizeof(process_names[0]);
@@ -18,16 +31,12 @@ void scramble_process_name(int argc, char *argv[]) {
     pthread_setname_np(pthread_self(), name);
     prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0);
 
-    // Change the Commandline seen in ps
-    // --> [Process Name, NULL, NULL, ...]
-    for (unsigned int i = 0; i < argc; i++) {
-        unsigned long length = MAX(strlen(argv[i]), strlen(name));
-        for (unsigned int j = 0; j < length; j++) {
-            if (i == 0 && j < strlen(name)) {
-                argv[i][j] = name[j];
-            } else {
-                argv[i][j] = 0x00;
-            }
-        }
-    }
+    // Change the Commandline seen in ps by directly reassigning argv
+    padded_strcpy(argv[0], (char *)name);
+    for (int i = 1; i < argc; i++)
+        padded_strcpy(argv[i], "");
+
+    // set the argv[0] pointer, which will cause some programs (like htop iirc) to read
+    // the program name from the new location.
+    argv[0] = (char *)name;
 }
