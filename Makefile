@@ -19,7 +19,7 @@ endif
 
 .PHONY: test
 test:	lifeline
-	cd test; docker-compose run --rm victim
+	cd test; docker-compose run --rm victim 
 
 .PHONY: dropper.pl
 dropper.pl:	lifeline extra/make_perl_dropper.sh

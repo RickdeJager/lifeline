@@ -2,7 +2,6 @@ version: "3"
 
 services:
   victim:
-          #   image: ubuntu
     build: .
     volumes:
       - ../build:/build
@@ -10,3 +9,6 @@ services:
     tty: true        # docker run -t
     entrypoint: bash
     working_dir: /build
+    cap_add:
+      # chattr is disabled by default in docker, this is needed for testing.
+      - LINUX_IMMUTABLE
